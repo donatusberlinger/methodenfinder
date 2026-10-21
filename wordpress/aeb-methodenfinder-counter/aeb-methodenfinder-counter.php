@@ -2,7 +2,7 @@
 /**
  * Plugin Name: aeB Methodenfinder – einfache Zugriffszählung
  * Description: Speichert ausschliesslich stündliche Aufrufsummen. Keine Cookies, IP-Adressen, Besucherkennungen oder Formulareingaben.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: aeB Schweiz
  */
 defined('ABSPATH') || exit;
@@ -69,7 +69,15 @@ final class AEB_Methodenfinder_Counter {
         $zone = new DateTimeZone('Europe/Zurich');
         $rows = $wpdb->get_results('SELECT hour_utc, views FROM ' . self::table() . ' ORDER BY hour_utc DESC', ARRAY_A);
         $total = 0; $days = array(); $hours = array();
+        // Exclude the single authorised installation test from 21 October 2026,
+        // 18:48 CEST. Keep the raw aggregate intact so the correction is reversible.
+        $test_excluded = 0;
+        $started_raw = get_option('aeb_mf_counter_started', '');
         foreach ($rows as $row) {
+            if (strpos($started_raw, '2026-10-21 16:48:') === 0 && $row['hour_utc'] === '2026-10-21 16:00:00') {
+                $test_excluded = min(1, (int) $row['views']);
+                $row['views'] = (int) $row['views'] - $test_excluded;
+            }
             $local = new DateTimeImmutable($row['hour_utc'], new DateTimeZone('UTC'));
             $local = $local->setTimezone($zone);
             $day = $local->format('Y-m-d');
@@ -82,8 +90,11 @@ final class AEB_Methodenfinder_Counter {
         echo '<div class="wrap"><h1>aeB-Methodenfinder: Seitenaufrufe</h1>';
         echo '<p>Datensparsame Zählung seit <strong>' . esc_html($started->setTimezone($zone)->format('d.m.Y H:i T')) . '</strong>. Kostenlos auf dem aeB-Server.</p>';
         echo '<h2>Heute: ' . esc_html(number_format_i18n(isset($days[$today]) ? $days[$today] : 0)) . ' · Insgesamt: ' . esc_html(number_format_i18n($total)) . '</h2>';
-        echo '<p>Gezählt wird jeder neu geladene, sichtbare Methodenfinder mit aktivem JavaScript. Mehrfachaufrufe zählen mehrfach; dies ist keine Zahl unterschiedlicher Personen. Bekannte Bots werden soweit erkennbar ausgeschlossen. Testaufrufe sind enthalten.</p>';
+        echo '<p>Gezählt wird jeder neu geladene, sichtbare Methodenfinder mit aktivem JavaScript. Mehrfachaufrufe zählen mehrfach; dies ist keine Zahl unterschiedlicher Personen. Bekannte Bots werden soweit erkennbar ausgeschlossen. </p>';
         echo '<p>Gespeichert werden nur Stunde und Aufrufsumme. Keine IP-Adressen, Cookies, Besucherkennungen, Herkunftsseiten oder Lernaufträge. Technische Serverprotokolle des Hosters bestehen davon unabhängig. Google Analytics ist separat und weiterhin zustimmungsabhängig.</p>';
+        if ($test_excluded) {
+            echo '<p>Der technische Installationstest vom 21.10.2026 (1 Aufruf) ist aus allen angezeigten Summen ausgeschlossen.</p>';
+        }
         echo '<h2>Letzte 30 Tage · Schweizer Zeit</h2><table class="widefat striped" style="max-width:700px"><thead><tr><th>Datum</th><th>Seitenaufrufe</th></tr></thead><tbody>';
         $date = new DateTimeImmutable('today', $zone);
         for ($i = 0; $i < 30; $i++) {
